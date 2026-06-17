@@ -3,6 +3,22 @@ import { useDiagramStore } from '../store/useDiagramStore.js';
 import { useUserStore } from '../store/useUserStore.js';
 import type { CollabMessage, Operation, CursorPayload, PresencePayload, User } from '@shared/types.js';
 
+// #region debug-point dp-logger
+const DBG = (typeof window !== 'undefined') ? {
+  url: 'http://127.0.0.1:7777/event',
+  sid: 'collab-sync-bugs',
+  log: (point: string, event: string, data: any = {}) => {
+    try {
+      fetch(DBG.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: DBG.sid, point, event, timestamp: Date.now(), data }),
+      }).catch(() => {});
+    } catch (e) {}
+  },
+} : { log: () => {} };
+// #endregion
+
 const WS_URL = (() => {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   return `${proto}://${location.host}/collab`;
@@ -30,6 +46,13 @@ export const useCollaboration = (diagramId: string) => {
     ws.onmessage = (ev) => {
       try {
         const msg: CollabMessage = JSON.parse(ev.data);
+        // #region debug-point dp-03
+        DBG.log('dp-03', 'ws:receive', {
+          type: msg.type, userId: msg.userId,
+          hasUser: !!(msg.payload as any)?.user,
+          payloadKeys: Object.keys(msg.payload ?? {}),
+        });
+        // #endregion
         if (msg.userId === user.id) return;
         handleMessage(msg);
       } catch (e) { console.error('WS message error', e); }
@@ -60,6 +83,9 @@ export const useCollaboration = (diagramId: string) => {
 
   const sendCursor = useCallback((cursor: CursorPayload) => {
     if (!user || !diagramId || !joinedRef.current) return;
+    // #region debug-point dp-03
+    DBG.log('dp-03', 'sendCursor', { userId: user.id, userName: user.name, color: user.color, x: cursor.x, y: cursor.y });
+    // #endregion
     rawSend({
       type: 'cursor', userId: user.id, diagramId,
       payload: cursor,
@@ -69,6 +95,13 @@ export const useCollaboration = (diagramId: string) => {
 
   const sendOps = useCallback((operations: Operation[]) => {
     if (!user || !diagramId || !joinedRef.current) return;
+    // #region debug-point dp-03
+    DBG.log('dp-03', 'sendOps', {
+      userId: user.id, userName: user.name, diagramId,
+      opTypes: operations.map(o => o.type),
+      hasNodeUpdate: operations.some(o => o.type === 'node:update'),
+    });
+    // #endregion
     rawSend({
       type: 'op', userId: user.id, diagramId,
       payload: { opId: crypto.randomUUID(), operations },

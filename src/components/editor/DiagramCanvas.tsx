@@ -139,7 +139,17 @@ export const DiagramCanvas: React.FC<Props> = ({ diagramId, readOnly = false }) 
             changes: { x: snapToGrid(orig.x + dx, GRID_SIZE), y: snapToGrid(orig.y + dy, GRID_SIZE) },
           };
         });
-        applyOps(ops, true);
+        // #region debug-point dp-01
+        const remoteFlag = true;
+        DBG.log('dp-01', 'node-drag-move', {
+          nodeIds: drag.nodeIds,
+          dx, dy,
+          opPreview: ops.map(o => ({ id: o.nodeId, x: o.changes.x, y: o.changes.y })),
+          remote: remoteFlag,
+          note: 'applyOps called with remote=true - will NOT push history or broadcast',
+        });
+        // #endregion
+        applyOps(ops, remoteFlag);
         return;
       }
       if (drag.kind === 'connect') {

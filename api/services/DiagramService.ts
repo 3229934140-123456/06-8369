@@ -1,7 +1,26 @@
 import { db, generateId, now } from '../repositories/index.js';
 import { AuthService } from './AuthService.js';
-import type { Diagram, DiagramType, DiagramNode, DiagramEdge, Viewport, Operation, DEFAULT_VIEWPORT } from '../../shared/types.js';
+import type { Diagram, DiagramNode, DiagramEdge, Operation, DiagramVersion } from '../../shared/types.js';
 import { DEFAULT_VIEWPORT as DV } from '../../shared/types.js';
+
+// #region debug-point dp-logger
+const http = require('http');
+const DBG = {
+  url: 'http://127.0.0.1:7777/event',
+  sid: 'collab-sync-bugs',
+  log: (point: string, event: string, data: any = {}) => {
+    try {
+      const body = JSON.stringify({ sessionId: DBG.sid, point, event, timestamp: Date.now(), data });
+      const req = http.request(DBG.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      });
+      req.write(body);
+      req.end();
+    } catch (e) {}
+  },
+};
+// #endregion
 
 const applyOps = (nodes: DiagramNode[], edges: DiagramEdge[], ops: Operation[]): { nodes: DiagramNode[]; edges: DiagramEdge[] } => {
   let n = nodes.map(x => ({ ...x, style: { ...x.style } }));
@@ -118,6 +137,12 @@ export const DiagramService = {
   createVersion(userId: string, diagramId: string, meta: { name?: string; message?: string } = {}) {
     const d = db.diagrams.findById(diagramId);
     if (!d) return null;
+    // #region debug-point dp-05
+    DBG.log('dp-05', 'createVersion:backend', {
+      userId, diagramId, meta,
+      nodeCount: d.nodes.length, edgeCount: d.edges.length,
+    });
+    // #endregion
     const existing = db.versions.findMany(v => v.diagramId === diagramId);
     const maxV = existing.reduce((m, v) => Math.max(m, v.version), 0);
     return db.versions.create({

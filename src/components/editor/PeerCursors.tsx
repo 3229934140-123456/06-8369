@@ -3,12 +3,41 @@ import { useDiagramStore } from '../../store/useDiagramStore.js';
 import type { Viewport, CursorPayload } from '@shared/types.js';
 import { viewportToScreen } from '../../lib/geometry.js';
 
+// #region debug-point dp-logger
+const DBG = (typeof window !== 'undefined') ? {
+  url: 'http://127.0.0.1:7777/event',
+  sid: 'collab-sync-bugs',
+  log: (point: string, event: string, data: any = {}) => {
+    try {
+      fetch(DBG.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: DBG.sid, point, event, timestamp: Date.now(), data }),
+      }).catch(() => {});
+    } catch (e) {}
+  },
+} : { log: () => {} };
+// #endregion
+
 interface Props {
   viewport: Viewport;
 }
 
 export const PeerCursors: React.FC<Props> = ({ viewport }) => {
   const peers = useDiagramStore(s => s.peers);
+
+  // #region debug-point dp-07
+  const peerList = Array.from(peers.values());
+  if (peerList.length > 0) {
+    DBG.log('dp-07', 'render-cursors', {
+      count: peerList.length,
+      peers: peerList.map(p => ({
+        userId: p.user.id, name: p.user.name, color: p.user.color,
+        hasCursor: !!p.cursor, x: p.cursor?.x, y: p.cursor?.y,
+      })),
+    });
+  }
+  // #endregion
 
   return (
     <>

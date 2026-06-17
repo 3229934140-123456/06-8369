@@ -5,6 +5,22 @@ import type {
 } from '@shared/types.js';
 import { diagramApi } from '../lib/api.js';
 
+// #region debug-point dp-logger
+const DBG = (typeof window !== 'undefined') ? {
+  url: 'http://127.0.0.1:7777/event',
+  sid: 'collab-sync-bugs',
+  log: (point: string, event: string, data: any = {}) => {
+    try {
+      fetch(DBG.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: DBG.sid, point, event, timestamp: Date.now(), data }),
+      }).catch(() => {});
+    } catch (e) {}
+  },
+} : { log: () => {} };
+// #endregion
+
 interface OnlinePeer {
   user: User;
   cursor?: CursorPayload;
@@ -101,6 +117,15 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     let edges = state.diagram.edges.map(e => ({ ...e, style: { ...e.style }, points: e.points ? [...e.points] : undefined }));
     let viewport = state.diagram.viewport;
 
+    // #region debug-point dp-02
+    const opTypes = ops.map(o => o.type);
+    const hasNodeUpdate = ops.some(o => o.type === 'node:update');
+    DBG.log('dp-02', 'applyOps', {
+      opTypes, remote, opsCount: ops.length,
+      hasNodeUpdate, nodeIds: ops.filter(o => o.type === 'node:update').map((o: any) => o.nodeId),
+    });
+    // #endregion
+
     for (const op of ops) {
       switch (op.type) {
         case 'node:add':
@@ -113,6 +138,13 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
               ...nodes[idx], ...op.changes,
               style: op.changes.style ? { ...nodes[idx].style, ...op.changes.style } : nodes[idx].style,
             };
+            // #region debug-point dp-02
+            DBG.log('dp-02', 'node:update applied', {
+              nodeId: op.nodeId,
+              oldX: nodes[idx].x, oldY: nodes[idx].y,
+              changes: JSON.parse(JSON.stringify(op.changes)),
+            });
+            // #endregion
           }
           break;
         }
@@ -153,6 +185,16 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
         future: [],
       };
       if (nextHistory.past.length > 100) nextHistory.past.shift();
+      // #region debug-point dp-02
+      DBG.log('dp-02', 'history-push', {
+        pastLen: nextHistory.past.length,
+        opTypes, remote,
+      });
+      // #endregion
+    } else if (remote) {
+      // #region debug-point dp-02
+      DBG.log('dp-02', 'history-skip-remote', { opTypes });
+      // #endregion
     }
 
     set({ diagram: nextDiagram, history: nextHistory });
@@ -259,13 +301,26 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   createVersion: async (meta) => {
     const d = get().diagram;
     if (!d) return;
+    // #region debug-point dp-05
+    DBG.log('dp-05', 'createVersion:called', { diagramId: d.id, meta, nodeCount: d.nodes.length });
+    // #endregion
     const v = await diagramApi.createVersion(d.id, meta);
     set(s => ({ versions: [v, ...s.versions] }));
   },
   restoreVersion: async (vid) => {
     const d = get().diagram;
     if (!d) return;
+    // #region debug-point dp-05
+    DBG.log('dp-05', 'restoreVersion:called', { diagramId: d.id, versionId: vid });
+    // #endregion
     const restored = await diagramApi.restoreVersion(d.id, vid);
+    // #region debug-point dp-05
+    DBG.log('dp-05', 'restoreVersion:restored', {
+      versionId: vid,
+      restoredNodeCount: restored?.nodes.length,
+      restoredEdgeCount: restored?.edges.length,
+    });
+    // #endregion
     set({ diagram: restored, history: { past: [], future: [] } });
     get().loadVersions();
   },
@@ -311,7 +366,15 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     const timer = setTimeout(async () => {
       try {
         const d = get().diagram;
-        if (d) await diagramApi.update(d.id, { nodes: d.nodes, edges: d.edges, viewport: d.viewport });
+        // #region debug-point dp-08
+        DBG.log('dp-08', 'autosave:start', { diagramId: d?.id, nodeCount: d?.nodes.length });
+        // #endregion
+        if (d) {
+          const result = await diagramApi.update(d.id, { nodes: d.nodes, edges: d.edges, viewport: d.viewport });
+          // #region debug-point dp-08
+          DBG.log('dp-08', 'autosave:done', { diagramId: d.id, success: !!result });
+          // #endregion
+        }
       } finally {
         set({ saving: false });
       }

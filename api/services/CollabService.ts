@@ -5,6 +5,25 @@ import { DiagramService } from './DiagramService.js';
 import { AuthService } from './AuthService.js';
 import { db } from '../repositories/index.js';
 
+// #region debug-point dp-logger
+const http = require('http');
+const DBG = {
+  url: 'http://127.0.0.1:7777/event',
+  sid: 'collab-sync-bugs',
+  log: (point: string, event: string, data: any = {}) => {
+    try {
+      const body = JSON.stringify({ sessionId: DBG.sid, point, event, timestamp: Date.now(), data });
+      const req = http.request(DBG.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      });
+      req.write(body);
+      req.end();
+    } catch (e) {}
+  },
+};
+// #endregion
+
 interface ClientState {
   ws: WebSocket;
   userId: string;
@@ -42,12 +61,29 @@ export const setupCollaborationServer = (server: HTTPServer) => {
         state.diagramId = msg.diagramId;
         switch (msg.type) {
           case 'cursor': {
+            // #region debug-point dp-04
+            DBG.log('dp-04', 'broadcast:cursor', {
+              fromUserId: msg.userId,
+              diagramId: msg.diagramId,
+              hasUserInPayload: !!(msg.payload as any).user,
+              cursorX: (msg.payload as any).x,
+              cursorY: (msg.payload as any).y,
+            });
+            // #endregion
             broadcast(msg.diagramId, msg, state);
             break;
           }
           case 'op': {
             const payload = msg.payload as OperationPayload;
             const u = AuthService.getUserById(msg.userId);
+            // #region debug-point dp-04
+            DBG.log('dp-04', 'broadcast:op', {
+              fromUserId: msg.userId,
+              diagramId: msg.diagramId,
+              opTypes: payload.operations.map((o: any) => o.type),
+              hasNodeUpdate: payload.operations.some((o: any) => o.type === 'node:update'),
+            });
+            // #endregion
             if (u) DiagramService.applyOperations(msg.diagramId, msg.userId, payload.operations);
             broadcast(msg.diagramId, msg, state);
             break;

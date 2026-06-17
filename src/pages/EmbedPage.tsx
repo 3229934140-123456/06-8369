@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { diagramApi } from '../lib/api.js';
 import type { Diagram } from '@shared/types.js';
@@ -6,14 +6,34 @@ import { NodeShapeRenderer } from '../components/editor/NodeShapeRenderer.jsx';
 import { DIAGRAM_TYPE_LABELS } from '@shared/types.js';
 import { Loader, Workflow, RefreshCw } from 'lucide-react';
 
+// #region debug-point dp-logger
+const DBG = (typeof window !== 'undefined') ? {
+  url: 'http://127.0.0.1:7777/event',
+  sid: 'collab-sync-bugs',
+  log: (point: string, event: string, data: any = {}) => {
+    try {
+      fetch(DBG.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: DBG.sid, point, event, timestamp: Date.now(), data }),
+      }).catch(() => {});
+    } catch (e) {}
+  },
+} : { log: () => {} };
+// #endregion
+
 export const EmbedPage: React.FC = () => {
   const { diagramId } = useParams<{ diagramId: string }>();
   const [diagram, setDiagram] = useState<Diagram | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const pollTimerRef = useRef<number | null>(null);
 
   const load = async () => {
     if (!diagramId) return;
+    // #region debug-point dp-06
+    DBG.log('dp-06', 'embed-load', { diagramId, polling: !!pollTimerRef.current });
+    // #endregion
     setLoading(true);
     setError('');
     try {
