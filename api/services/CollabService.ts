@@ -1,12 +1,12 @@
 import { Server as HTTPServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import type { CollabMessage, CursorPayload, OperationPayload, PresencePayload, User } from '../../shared/types.js';
+import http from 'node:http';
+import type { CollabMessage, OperationPayload, PresencePayload, User } from '../../shared/types.js';
 import { DiagramService } from './DiagramService.js';
 import { AuthService } from './AuthService.js';
 import { db } from '../repositories/index.js';
 
 // #region debug-point dp-logger
-const http = require('http');
 const DBG = {
   url: 'http://127.0.0.1:7777/event',
   sid: 'collab-sync-bugs',
@@ -29,6 +29,7 @@ interface ClientState {
   userId: string;
   diagramId: string;
   user?: User;
+  lastMsgAt?: number;
 }
 
 const rooms: Map<string, Set<ClientState>> = new Map();
@@ -59,18 +60,25 @@ export const setupCollaborationServer = (server: HTTPServer) => {
         }
 
         state.diagramId = msg.diagramId;
+        state.lastMsgAt = Date.now();
         switch (msg.type) {
           case 'cursor': {
+            const augmentedPayload = { ...(msg.payload as object), user: state!.user };
+            const broadcastMsg: CollabMessage = {
+              ...msg,
+              payload: augmentedPayload as any,
+            };
             // #region debug-point dp-04
             DBG.log('dp-04', 'broadcast:cursor', {
               fromUserId: msg.userId,
               diagramId: msg.diagramId,
-              hasUserInPayload: !!(msg.payload as any).user,
+              hasUserInPayload: !!(broadcastMsg.payload as any).user,
+              userName: (broadcastMsg.payload as any).user?.name,
               cursorX: (msg.payload as any).x,
               cursorY: (msg.payload as any).y,
             });
             // #endregion
-            broadcast(msg.diagramId, msg, state);
+            broadcast(msg.diagramId, broadcastMsg, state);
             break;
           }
           case 'op': {
@@ -104,14 +112,32 @@ export const setupCollaborationServer = (server: HTTPServer) => {
       if (room) {
         room.delete(state);
         if (room.size === 0) rooms.delete(state.diagramId);
-        else broadcast(state.diagramId, {
-          type: 'leave', userId: state.userId, diagramId: state.diagramId,
-          payload: { user: state.user!, online: false } as PresencePayload,
-          timestamp: Date.now(),
-        });
+        else {
+          broadcast(state.diagramId, {
+            type: 'leave', userId: state.userId, diagramId: state.diagramId,
+            payload: { user: state.user!, online: false } as PresencePayload,
+            timestamp: Date.now(),
+          });
+          broadcastRoomPresence(state.diagramId);
+        }
       }
     });
   });
+
+  const clientTimer = setInterval(() => {
+    const now = Date.now();
+    rooms.forEach((room, diagramId) => {
+      room.forEach(c => {
+        if (c.lastMsgAt && now - c.lastMsgAt > 90_000) {
+          try { c.ws.close(); } catch {}
+          room.delete(c);
+        }
+      });
+      if (room.size === 0) rooms.delete(diagramId);
+      else broadcastRoomPresence(diagramId);
+    });
+  }, 30_000);
+  wss.on('close', () => clearInterval(clientTimer));
 
   const broadcast = (diagramId: string, msg: CollabMessage, exclude?: ClientState | null) => {
     const room = rooms.get(diagramId);
@@ -122,16 +148,33 @@ export const setupCollaborationServer = (server: HTTPServer) => {
     });
   };
 
+  const broadcastRoomPresence = (diagramId: string) => {
+    const room = rooms.get(diagramId);
+    if (!room) return;
+    const users: { user: User; online: boolean }[] = [];
+    room.forEach(c => { if (c.user) users.push({ user: c.user, online: true }); });
+    room.forEach(c => {
+      if (c.ws.readyState !== WebSocket.OPEN) return;
+      const payload: PresencePayload = { users, self: c.user! };
+      c.ws.send(JSON.stringify({
+        type: 'presence', userId: c.userId, diagramId, payload, timestamp: Date.now(),
+      } as CollabMessage));
+    });
+  };
+
   const sendRoomPresence = (client: ClientState) => {
     const room = rooms.get(client.diagramId);
     if (!room) return;
     const users: { user: User; online: boolean }[] = [];
     room.forEach(c => { if (c.user) users.push({ user: c.user, online: true }); });
-    const payload: CollabMessage = {
-      type: 'presence', userId: client.userId, diagramId: client.diagramId,
-      payload: { users } as any, timestamp: Date.now(),
-    };
-    if (client.ws.readyState === WebSocket.OPEN) client.ws.send(JSON.stringify(payload));
+    const payload: PresencePayload = { users, self: client.user! };
+    if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(JSON.stringify({
+        type: 'presence', userId: client.userId, diagramId: client.diagramId,
+        payload, timestamp: Date.now(),
+      } as CollabMessage));
+    }
+    broadcastRoomPresence(client.diagramId);
   };
 
   console.log('[Collab] WebSocket server mounted at /collab');

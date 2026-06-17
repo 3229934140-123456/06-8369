@@ -27,24 +27,53 @@ export const EmbedPage: React.FC = () => {
   const [diagram, setDiagram] = useState<Diagram | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [syncedAt, setSyncedAt] = useState<string>('');
+  const [isLive, setIsLive] = useState(false);
+  const lastHashRef = useRef<string>('');
   const pollTimerRef = useRef<number | null>(null);
 
-  const load = async () => {
+  const computeHash = (d: Diagram) => {
+    let h = `${d.nodes.length}|${d.edges.length}|`;
+    for (const n of d.nodes) h += `${n.id}:${n.x|0},${n.y|0},${n.text.length};`;
+    for (const e of d.edges) h += `${e.id}:${e.source}->${e.target},${e.label?.length ?? 0};`;
+    return h;
+  };
+
+  const load = async (silent = false) => {
     if (!diagramId) return;
     // #region debug-point dp-06
-    DBG.log('dp-06', 'embed-load', { diagramId, polling: !!pollTimerRef.current });
+    DBG.log('dp-06', 'embed-load', { diagramId, polling: !!pollTimerRef.current, silent });
     // #endregion
-    setLoading(true);
+    if (!silent) { setLoading(true); }
     setError('');
     try {
       const d = await diagramApi.get(diagramId);
-      setDiagram(d);
+      const hash = computeHash(d);
+      if (lastHashRef.current !== hash) {
+        lastHashRef.current = hash;
+        setDiagram(d);
+        // #region debug-point dp-06
+        DBG.log('dp-06', 'embed-content-changed', { diagramId, newHash: hash.slice(0, 60) });
+        // #endregion
+      }
+      setSyncedAt(new Date().toLocaleTimeString('zh-CN'));
+      setIsLive(true);
     } catch (e: any) {
       setError(e.message ?? '加载失败');
-    } finally { setLoading(false); }
+      setIsLive(false);
+    } finally { if (!silent) setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [diagramId]);
+  useEffect(() => {
+    lastHashRef.current = '';
+    load(false);
+    const id = window.setInterval(() => load(true), 3000);
+    pollTimerRef.current = id;
+    return () => {
+      if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    };
+  }, [diagramId]);
 
   if (loading) return (
     <div className="h-full w-full flex items-center justify-center bg-white">
@@ -86,12 +115,16 @@ export const EmbedPage: React.FC = () => {
           <span className="text-[10px] text-graphite-400 px-2 py-0.5 rounded-full bg-graphite-100">
             {DIAGRAM_TYPE_LABELS[diagram.type]}
           </span>
+          <span className="inline-flex items-center gap-1.5 text-[10px] text-success-600 bg-success-500/10 px-2 py-0.5 rounded-full">
+            <span className={`w-1.5 h-1.5 rounded-full bg-success-500${isLive ? ' animate-pulse' : ''}`} />
+            {isLive ? '实时同步中' : '同步中断'}
+          </span>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-graphite-400">
-            更新于 {new Date(diagram.updatedAt).toLocaleString('zh-CN')}
+            {syncedAt ? `同步于 ${syncedAt}` : '加载中...'}
           </span>
-          <button onClick={load} className="p-1.5 rounded-md hover:bg-graphite-100 text-graphite-500" title="刷新">
+          <button onClick={() => load(false)} className="p-1.5 rounded-md hover:bg-graphite-100 text-graphite-500" title="手动刷新">
             <RefreshCw size={14} />
           </button>
           <Link to="/login" className="text-[11px] text-electric-500 hover:underline font-semibold">在 FlowSync 打开</Link>

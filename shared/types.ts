@@ -150,8 +150,10 @@ export interface OperationPayload {
 }
 
 export interface PresencePayload {
-  user: User;
-  online: boolean;
+  user?: User;
+  online?: boolean;
+  users?: { user: User; online: boolean }[];
+  self?: User;
 }
 
 export type CollabMessageType = 'cursor' | 'op' | 'join' | 'leave' | 'presence';

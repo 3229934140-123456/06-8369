@@ -27,6 +27,7 @@ const WS_URL = (() => {
 export const useCollaboration = (diagramId: string) => {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<number | null>(null);
+  const cleanupRef = useRef<number | null>(null);
   const joinedRef = useRef(false);
   const user = useUserStore(s => s.user);
   const applyOps = useDiagramStore(s => s.applyOps);
@@ -88,10 +89,10 @@ export const useCollaboration = (diagramId: string) => {
     // #endregion
     rawSend({
       type: 'cursor', userId: user.id, diagramId,
-      payload: cursor,
+      payload: { ...cursor, user } as CursorPayload & { user: User },
       timestamp: Date.now(),
     });
-  }, [user?.id, diagramId]);
+  }, [user?.id, user?.name, user?.color, diagramId]);
 
   const sendOps = useCallback((operations: Operation[]) => {
     if (!user || !diagramId || !joinedRef.current) return;
@@ -109,15 +110,26 @@ export const useCollaboration = (diagramId: string) => {
     });
   }, [user?.id, diagramId]);
 
+  const broadcastOps = useCallback((operations: Operation[]) => {
+    sendOps(operations);
+  }, [sendOps]);
+
   const handleMessage = (msg: CollabMessage) => {
     switch (msg.type) {
       case 'cursor': {
-        const p = msg.payload as CursorPayload & { user?: User };
-        const userInPayload = (msg.payload as any).user;
+        const userInPayload = (msg.payload as any).user as User | undefined;
+        if (!userInPayload) break;
+        const resolvedUser: User = { ...userInPayload, id: msg.userId };
+        // #region debug-point dp-03
+        DBG.log('dp-03', 'handle:cursor:resolved', {
+          fromMsgUserId: msg.userId,
+          userName: resolvedUser.name,
+          color: resolvedUser.color,
+          cursor: msg.payload as CursorPayload,
+        });
+        // #endregion
         setPeer({
-          user: userInPayload ?? {
-            id: msg.userId, name: '协作者', email: '', avatar: 'C', color: '#3B82F6',
-          },
+          user: resolvedUser,
           cursor: msg.payload as CursorPayload,
           lastSeen: msg.timestamp,
         });
@@ -131,6 +143,12 @@ export const useCollaboration = (diagramId: string) => {
       case 'join': {
         const payload = msg.payload as PresencePayload & { users?: { user: User; online: boolean }[] };
         if (payload.users) {
+          const ids = new Set(payload.users.filter(x => x.online).map(x => x.user.id));
+          ids.add(user?.id ?? '');
+          const livePeers = useDiagramStore.getState().peers;
+          for (const existingId of livePeers.keys()) {
+            if (!ids.has(existingId)) removePeer(existingId);
+          }
           payload.users.forEach(({ user: u }) => {
             if (u.id !== user?.id) setPeer({ user: u, lastSeen: Date.now() });
           });
@@ -145,8 +163,14 @@ export const useCollaboration = (diagramId: string) => {
         break;
       }
       case 'presence': {
-        const payload = msg.payload as PresencePayload & { users?: { user: User; online: boolean }[] };
+        const payload = msg.payload as PresencePayload & { users?: { user: User; online: boolean }[]; self?: User };
         if (payload.users) {
+          const onlineIds = new Set(payload.users.filter(x => x.online).map(x => x.user.id));
+          if (user?.id) onlineIds.add(user.id);
+          const livePeers = useDiagramStore.getState().peers;
+          for (const existingId of livePeers.keys()) {
+            if (!onlineIds.has(existingId)) removePeer(existingId);
+          }
           payload.users.forEach(({ user: u }) => {
             if (u.id !== user?.id) setPeer({ user: u, lastSeen: Date.now() });
           });
@@ -160,13 +184,25 @@ export const useCollaboration = (diagramId: string) => {
 
   useEffect(() => {
     connect();
+    cleanupRef.current = window.setInterval(() => {
+      const nowTs = Date.now();
+      const snapshot = useDiagramStore.getState().peers;
+      snapshot.forEach((peer, id) => {
+        if (nowTs - peer.lastSeen > 45_000) {
+          DBG.log('dp-03', 'peer:stale-cleanup', { peerId: id, name: peer.user.name, lastSeenAgo: nowTs - peer.lastSeen });
+          removePeer(id);
+        }
+      });
+    }, 10_000);
     return () => {
+      if (cleanupRef.current) clearInterval(cleanupRef.current);
+      cleanupRef.current = null;
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
       wsRef.current?.close();
       wsRef.current = null;
       joinedRef.current = false;
     };
-  }, [connect]);
+  }, [connect, removePeer]);
 
   useEffect(() => {
     const origApply = useDiagramStore.getState().applyOps;
@@ -183,5 +219,5 @@ export const useCollaboration = (diagramId: string) => {
     };
   }, [sendOps]);
 
-  return { sendCursor, connected: wsRef.current?.readyState === WebSocket.OPEN };
+  return { sendCursor, broadcastOps, connected: wsRef.current?.readyState === WebSocket.OPEN };
 };

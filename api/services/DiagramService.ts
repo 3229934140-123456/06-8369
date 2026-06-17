@@ -1,10 +1,10 @@
 import { db, generateId, now } from '../repositories/index.js';
 import { AuthService } from './AuthService.js';
-import type { Diagram, DiagramNode, DiagramEdge, Operation, DiagramVersion } from '../../shared/types.js';
+import type { Diagram, DiagramNode, DiagramEdge, Operation, DiagramVersion, DiagramType, Viewport } from '../../shared/types.js';
 import { DEFAULT_VIEWPORT as DV } from '../../shared/types.js';
+import http from 'node:http';
 
 // #region debug-point dp-logger
-const http = require('http');
 const DBG = {
   url: 'http://127.0.0.1:7777/event',
   sid: 'collab-sync-bugs',
@@ -107,7 +107,12 @@ export const DiagramService = {
     const d = db.diagrams.findById(id);
     if (!d) return undefined;
     if (!AuthService.canEdit(userId, d.projectId)) return undefined;
-    return db.diagrams.update(id, { ...changes, updatedAt: now(), updatedBy: userId });
+    const hasContentChange = changes.nodes !== undefined || changes.edges !== undefined;
+    const updated = db.diagrams.update(id, { ...changes, updatedAt: now(), updatedBy: userId });
+    if (hasContentChange && updated) {
+      setImmediate(() => this.maybeCreateAutoVersion(userId, id, 'content-update'));
+    }
+    return updated;
   },
 
   applyOperations(id: string, userId: string, ops: Operation[]): Diagram | undefined {
@@ -116,12 +121,62 @@ export const DiagramService = {
     if (!AuthService.canEdit(userId, d.projectId)) return undefined;
     const vp = ops.find(o => o.type === 'viewport:update') as Operation & { viewport?: Viewport };
     const otherOps = ops.filter(o => o.type !== 'viewport:update');
+    if (otherOps.length === 0 && !vp) return d;
     const { nodes, edges } = applyOps(d.nodes, d.edges, otherOps);
-    return db.diagrams.update(id, {
+    const hasContentChange = otherOps.length > 0;
+    const updated = db.diagrams.update(id, {
       nodes, edges,
       viewport: vp?.viewport ?? d.viewport,
       updatedAt: now(), updatedBy: userId,
     });
+    if (hasContentChange && updated) {
+      setImmediate(() => this.maybeCreateAutoVersion(userId, id, 'collab-ops'));
+    }
+    return updated;
+  },
+
+  maybeCreateAutoVersion(
+    userId: string,
+    diagramId: string,
+    reason: 'content-update' | 'collab-ops'
+  ) {
+    try {
+      const d = db.diagrams.findById(diagramId);
+      if (!d) return;
+      const existing = db.versions.findMany(v => v.diagramId === diagramId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const last = existing[0];
+      const minIntervalMs = 60 * 1000;
+      if (last) {
+        const lastAge = Date.now() - new Date(last.createdAt).getTime();
+        if (lastAge < minIntervalMs) return;
+      }
+      const sig = `${d.nodes.length}-${d.edges.length}-${d.nodes.reduce((s, n) => s + (n.x | 0) + (n.y | 0) + n.text.length, 0)}`;
+      const lastSig = last?.snapshot ? `${last.snapshot.nodes.length}-${last.snapshot.edges.length}-${last.snapshot.nodes.reduce((s, n) => s + (n.x | 0) + (n.y | 0) + n.text.length, 0)}` : '';
+      if (sig === lastSig) return;
+      const now = new Date();
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      DBG.log('dp-05', 'createVersion:auto', {
+        userId, diagramId, reason, stamp,
+        nodeCount: d.nodes.length, edgeCount: d.edges.length,
+      });
+      db.versions.create({
+        id: generateId('v'),
+        diagramId,
+        version: (existing[0]?.version ?? 0) + 1,
+        name: `自动快照 ${stamp}`,
+        message: `由 ${reason} 触发的自动快照`,
+        createdBy: userId,
+        createdAt: new Date().toISOString(),
+        snapshot: {
+          nodes: d.nodes.map(n => ({ ...n, style: { ...n.style } })),
+          edges: d.edges.map(e => ({ ...e, style: { ...e.style }, points: e.points ? [...e.points] : undefined })),
+          viewport: { ...d.viewport },
+        },
+      });
+    } catch (e) {
+      console.error('[DiagramService] auto version error:', e);
+    }
   },
 
   delete(id: string, userId: string): boolean {

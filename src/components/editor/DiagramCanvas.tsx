@@ -10,6 +10,22 @@ import { screenToViewport, snapToGrid, computeAutoPorts, getPortPosition, buildE
 import { PeerCursors } from './PeerCursors.js';
 import { getShapeDefinition } from '@shared/shape-types.js';
 
+// #region debug-point dp-logger
+const DBG = (typeof window !== 'undefined') ? {
+  url: 'http://127.0.0.1:7777/event',
+  sid: 'collab-sync-bugs',
+  log: (point: string, event: string, data: any = {}) => {
+    try {
+      fetch(DBG.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: DBG.sid, point, event, timestamp: Date.now(), data }),
+      }).catch(() => {});
+    } catch (e) {}
+  },
+} : { log: () => {} };
+// #endregion
+
 interface Props {
   diagramId: string;
   readOnly?: boolean;
@@ -53,7 +69,11 @@ export const DiagramCanvas: React.FC<Props> = ({ diagramId, readOnly = false }) 
   const updateViewport = useDiagramStore(s => s.updateViewport);
 
   const user = useUserStore(s => s.user);
-  const { sendCursor } = useCollaboration(diagramId);
+  const { sendCursor, broadcastOps } = useCollaboration(diagramId);
+
+  const lastDragBroadcastRef = useRef<number>(0);
+  const dragChangedRef = useRef(false);
+  const GRID_SIZE = 10;
 
   const vpTransform = `translate(${viewport.x} ${viewport.y}) scale(${viewport.zoom})`;
 
@@ -133,23 +153,36 @@ export const DiagramCanvas: React.FC<Props> = ({ diagramId, readOnly = false }) 
         const dy = (e.clientY - drag.startY) / viewport.zoom;
         const ops = drag.nodeIds.map(id => {
           const orig = drag.originalPos.get(id)!;
+          const newX = snapToGrid(orig.x + dx, GRID_SIZE);
+          const newY = snapToGrid(orig.y + dy, GRID_SIZE);
           return {
             type: 'node:update' as const,
             nodeId: id,
-            changes: { x: snapToGrid(orig.x + dx, GRID_SIZE), y: snapToGrid(orig.y + dy, GRID_SIZE) },
+            changes: { x: newX, y: newY },
           };
         });
+        const hasChange = ops.some(o => {
+          const orig = drag.originalPos.get(o.nodeId)!;
+          return orig.x !== o.changes.x || orig.y !== o.changes.y;
+        });
+        if (hasChange) dragChangedRef.current = true;
+
         // #region debug-point dp-01
-        const remoteFlag = true;
         DBG.log('dp-01', 'node-drag-move', {
           nodeIds: drag.nodeIds,
           dx, dy,
           opPreview: ops.map(o => ({ id: o.nodeId, x: o.changes.x, y: o.changes.y })),
-          remote: remoteFlag,
-          note: 'applyOps called with remote=true - will NOT push history or broadcast',
+          remoteLocalRender: true,
+          willBroadcast: hasChange && (Date.now() - lastDragBroadcastRef.current > 50),
         });
         // #endregion
-        applyOps(ops, remoteFlag);
+
+        applyOps(ops, true);
+
+        if (hasChange && (Date.now() - lastDragBroadcastRef.current > 50)) {
+          lastDragBroadcastRef.current = Date.now();
+          broadcastOps(ops);
+        }
         return;
       }
       if (drag.kind === 'connect') {
@@ -197,6 +230,37 @@ export const DiagramCanvas: React.FC<Props> = ({ diagramId, readOnly = false }) 
           style: { ...DES },
         });
       }
+      if (drag.kind === 'node' && dragChangedRef.current) {
+        const dx = (e.clientX - drag.startX) / viewport.zoom;
+        const dy = (e.clientY - drag.startY) / viewport.zoom;
+        const finalOps = drag.nodeIds.map(id => {
+          const orig = drag.originalPos.get(id)!;
+          return {
+            type: 'node:update' as const,
+            nodeId: id,
+            changes: { x: snapToGrid(orig.x + dx, GRID_SIZE), y: snapToGrid(orig.y + dy, GRID_SIZE) },
+          };
+        }).filter(o => {
+          const orig = drag.originalPos.get(o.nodeId)!;
+          return orig.x !== o.changes.x || orig.y !== o.changes.y;
+        });
+        if (finalOps.length > 0) {
+          // #region debug-point dp-01
+          DBG.log('dp-01', 'node-drag-commit', {
+            nodeIds: finalOps.map(o => o.nodeId),
+            finalDeltas: finalOps.map(o => ({
+              id: o.nodeId,
+              deltaX: (o.changes.x ?? 0) - (drag.originalPos.get(o.nodeId)!.x),
+              deltaY: (o.changes.y ?? 0) - (drag.originalPos.get(o.nodeId)!.y),
+            })),
+            historyCommit: true,
+            persistence: true,
+          });
+          // #endregion
+          applyOps(finalOps, false);
+        }
+        dragChangedRef.current = false;
+      }
       setDrag({ kind: 'none' });
       setConnectTo(null);
     };
@@ -207,7 +271,7 @@ export const DiagramCanvas: React.FC<Props> = ({ diagramId, readOnly = false }) 
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [drag, viewport, nodes, connectTo, applyOps, addEdge, selectNode, updateViewport]);
+  }, [drag, viewport, nodes, connectTo, applyOps, addEdge, selectNode, updateViewport, broadcastOps]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
