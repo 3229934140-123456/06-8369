@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDiagramStore } from '../../store/useDiagramStore.js';
 import { useUserStore } from '../../store/useUserStore.js';
-import type { DiagramNode, DiagramEdge } from '@shared/types.js';
-import { Palette, Type, Square, Send, CheckCircle2, MessageCircle, RotateCcw, Plus, Clock, User } from 'lucide-react';
+import type { DiagramNode, DiagramEdge, ShareScope, ShareConfig, User } from '@shared/types.js';
+import { Palette, Type, Square, Send, CheckCircle2, MessageCircle, RotateCcw, Plus, Clock, User as UserIcon, Share2, Copy, Check, Lock, Users as UsersIcon, Globe, UserPlus, Link2, Code } from 'lucide-react';
 import { cn } from '../../lib/utils.js';
-import { authApi } from '../../lib/api.js';
+import { authApi, diagramApi } from '../../lib/api.js';
 
-export type RightPanelTab = 'properties' | 'versions' | 'comments';
+export type RightPanelTab = 'properties' | 'versions' | 'comments' | 'share';
 
 interface Props {
   tab: RightPanelTab;
@@ -18,6 +18,7 @@ export const RightPanel: React.FC<Props> = ({ tab }) => {
       {tab === 'properties' && <PropertiesPanel />}
       {tab === 'versions' && <VersionsPanel />}
       {tab === 'comments' && <CommentsPanel />}
+      {tab === 'share' && <SharePanel />}
     </div>
   );
 };
@@ -505,6 +506,196 @@ const CommentsPanel: React.FC = () => {
           );
         })}
       </div>
+    </div>
+  );
+};
+
+const SharePanel: React.FC = () => {
+  const diagram = useDiagramStore(s => s.diagram);
+  const user = useUserStore(s => s.user);
+  const [cfg, setCfg] = useState<ShareConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!diagram?.id) return;
+    setLoading(true);
+    Promise.all([
+      diagramApi.getShareConfig(diagram.id).catch(() => null),
+      authApi.listUsers().catch(() => []),
+    ]).then(([s, us]) => {
+      setCfg(s ?? null);
+      setAllUsers(us);
+      setLoading(false);
+    });
+  }, [diagram?.id]);
+
+  const updateScope = async (scope: ShareScope) => {
+    if (!diagram || !user || !cfg) return;
+    setSaving(true);
+    try {
+      const next = await diagramApi.updateShareConfig(diagram.id, { scope });
+      setCfg(next);
+    } finally { setSaving(false); }
+  };
+
+  const toggleMember = async (uid: string) => {
+    if (!diagram || !user || !cfg) return;
+    const next = cfg.allowedMemberIds.includes(uid)
+      ? cfg.allowedMemberIds.filter(x => x !== uid)
+      : [...cfg.allowedMemberIds, uid];
+    setSaving(true);
+    try {
+      const r = await diagramApi.updateShareConfig(diagram.id, { allowedMemberIds: next });
+      setCfg(r);
+    } finally { setSaving(false); }
+  };
+
+  const copyLink = async (type: 'share' | 'embed') => {
+    if (!diagram) return;
+    const base = window.location.origin;
+    const url = type === 'share'
+      ? `${base}/share/${diagram.id}`
+      : `${base}/embed/${diagram.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(type);
+      setTimeout(() => setCopied(null), 2000);
+    } catch {}
+  };
+
+  const SCOPE_LABELS: { scope: ShareScope; label: string; desc: string; icon: any; color: string }[] = [
+    { scope: 'private', label: '私有（仅项目成员）', desc: '只有加入项目的人可以查看或编辑', icon: Lock, color: 'text-warning-600 bg-warning-500/10' },
+    { scope: 'public_readonly', label: '公开只读', desc: '任何人有链接即可查看，不能编辑', icon: Globe, color: 'text-success-600 bg-success-500/10' },
+    { scope: 'team', label: '团队可见', desc: '同组织/工作区的所有成员可见', icon: UsersIcon, color: 'text-electric-600 bg-electric-500/10' },
+    { scope: 'specified', label: '指定成员可见', desc: '仅勾选的成员能访问', icon: UserPlus, color: 'text-violet-600 bg-violet-500/10' },
+  ];
+
+  return (
+    <div className="flex-1 overflow-y-auto thin-scrollbar">
+      <div className="px-4 py-3 border-b border-graphite-100 flex items-center gap-2">
+        <Share2 size={16} className="text-electric-500" />
+        <h3 className="font-display font-semibold text-sm text-graphite-800">分享设置</h3>
+        {saving && <span className="ml-auto text-[11px] text-graphite-400">保存中…</span>}
+      </div>
+
+      {loading || !cfg ? (
+        <div className="p-8 text-center text-graphite-400 text-xs">
+          <Share2 size={30} className="mx-auto mb-2 opacity-40" />
+          加载分享配置…
+        </div>
+      ) : (
+        <div className="p-4 space-y-5 text-sm">
+          <div>
+            <label className="text-xs font-semibold text-graphite-700 mb-2 block">访问范围</label>
+            <div className="space-y-2">
+              {SCOPE_LABELS.map(s => {
+                const active = cfg.scope === s.scope;
+                const Icon = s.icon;
+                return (
+                  <button
+                    key={s.scope}
+                    onClick={() => updateScope(s.scope)}
+                    disabled={saving}
+                    className={cn(
+                      'w-full flex items-start gap-3 p-2.5 rounded-lg border transition text-left',
+                      active ? 'border-electric-300 bg-electric-500/5' : 'border-graphite-200 hover:bg-graphite-50'
+                    )}
+                  >
+                    <span className={cn('w-7 h-7 rounded-md flex items-center justify-center shrink-0', s.color)}>
+                      <Icon size={14} />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold text-graphite-800 flex items-center gap-2">
+                        {s.label}
+                        {active && <Check size={13} className="text-electric-500" />}
+                      </div>
+                      <div className="text-[11px] text-graphite-500 mt-0.5">{s.desc}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {cfg.scope === 'specified' && (
+            <div>
+              <label className="text-xs font-semibold text-graphite-700 mb-2 block">
+                指定可见成员（{cfg.allowedMemberIds.length} 人）
+              </label>
+              <div className="border border-graphite-200 rounded-lg divide-y divide-graphite-100 max-h-56 overflow-auto">
+                {allUsers.map(u => {
+                  const checked = cfg.allowedMemberIds.includes(u.id);
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => toggleMember(u.id)}
+                      className="w-full flex items-center gap-3 p-2.5 hover:bg-graphite-50 transition text-left"
+                    >
+                      <div className={cn(
+                        'w-4 h-4 rounded border flex items-center justify-center shrink-0',
+                        checked ? 'bg-electric-500 border-electric-500' : 'border-graphite-300'
+                      )}>
+                        {checked && <Check size={11} className="text-white" />}
+                      </div>
+                      <div
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0"
+                        style={{ backgroundColor: u.color }}
+                      >
+                        {u.avatar}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-graphite-800 truncate">{u.name}</div>
+                        <div className="text-[11px] text-graphite-500 truncate">{u.email}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-graphite-100 space-y-2">
+            <label className="text-xs font-semibold text-graphite-700 block">分享链接</label>
+            <button
+              onClick={() => copyLink('share')}
+              className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-graphite-200 hover:bg-graphite-50 transition text-left"
+            >
+              <Link2 size={15} className="text-electric-500 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] text-graphite-500">分享页链接</div>
+                <div className="text-xs text-graphite-700 truncate font-mono">/share/{diagram.id}</div>
+              </div>
+              {copied === 'share'
+                ? <Check size={14} className="text-success-500 shrink-0" />
+                : <Copy size={14} className="text-graphite-400 shrink-0" />}
+            </button>
+            <button
+              onClick={() => copyLink('embed')}
+              className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-graphite-200 hover:bg-graphite-50 transition text-left"
+            >
+              <Code size={15} className="text-violet-500 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] text-graphite-500">嵌入链接（iframe）</div>
+                <div className="text-xs text-graphite-700 truncate font-mono">/embed/{diagram.id}</div>
+              </div>
+              {copied === 'embed'
+                ? <Check size={14} className="text-success-500 shrink-0" />
+                : <Copy size={14} className="text-graphite-400 shrink-0" />}
+            </button>
+          </div>
+
+          <div className="p-3 rounded-lg bg-graphite-50 border border-graphite-100 text-[11px] text-graphite-500 leading-relaxed">
+            <div className="font-semibold text-graphite-700 mb-1 flex items-center gap-1.5">
+              <UserIcon size={12} /> 修改人
+            </div>
+            最后由 <span className="font-medium text-graphite-700">{user?.name ?? '协作者'}</span> 更新于
+            <span className="font-medium text-graphite-700"> {new Date(cfg.updatedAt).toLocaleString('zh-CN')}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

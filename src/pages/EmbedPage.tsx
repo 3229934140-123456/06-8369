@@ -34,9 +34,14 @@ export const EmbedPage: React.FC = () => {
   const pollTimerRef = useRef<number | null>(null);
 
   const computeHash = (d: Diagram) => {
-    let h = `${d.nodes.length}|${d.edges.length}|`;
-    for (const n of d.nodes) h += `${n.id}:${n.x|0},${n.y|0},${n.text.length};`;
-    for (const e of d.edges) h += `${e.id}:${e.source}->${e.target},${e.label?.length ?? 0};`;
+    let h = `N${d.nodes.length}|E${d.edges.length}|`;
+    for (const n of d.nodes) {
+      h += `[${n.id}|${n.type}|${n.x.toFixed(1)},${n.y.toFixed(1)},${n.width},${n.height}|${n.zIndex}|${encodeURIComponent(n.text)}|${n.style.fill}|${n.style.stroke}|${n.style.strokeWidth}|${n.style.borderRadius}|${n.style.fontSize}|${n.style.fontColor}|${n.style.fontFamily}|${n.style.opacity}]`;
+    }
+    h += '||';
+    for (const e of d.edges) {
+      h += `[${e.id}|${e.source}->${e.target}|${e.sourcePort ?? ''}|${e.targetPort ?? ''}|${encodeURIComponent(e.label ?? '')}|${e.style.stroke}|${e.style.strokeWidth}|${e.style.dashed ? 1 : 0}|${e.style.arrowStart ? 1 : 0}|${e.style.arrowEnd ? 1 : 0}|${e.style.curve}|${(e.points ?? []).map(p => p.x.toFixed(0) + ',' + p.y.toFixed(0)).join(';')}]`;
+    }
     return h;
   };
 

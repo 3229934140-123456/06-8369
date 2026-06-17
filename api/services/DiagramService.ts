@@ -1,6 +1,6 @@
 import { db, generateId, now } from '../repositories/index.js';
 import { AuthService } from './AuthService.js';
-import type { Diagram, DiagramNode, DiagramEdge, Operation, DiagramVersion, DiagramType, Viewport } from '../../shared/types.js';
+import type { Diagram, DiagramNode, DiagramEdge, Operation, DiagramVersion, DiagramType, Viewport, ShareConfig, ShareScope } from '../../shared/types.js';
 import { DEFAULT_VIEWPORT as DV } from '../../shared/types.js';
 import http from 'node:http';
 
@@ -104,6 +104,7 @@ export const DiagramService = {
       viewport: { ...DV },
       nodes,
       edges,
+      share: { scope: 'private', allowedMemberIds: [], updatedAt: now(), updatedBy: userId },
     };
     const created = db.diagrams.create(diagram);
     this.createVersion(userId, created.id, { name: '初始版本', message: '自动创建初始版本快照' });

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type {
   Diagram, DiagramNode, DiagramEdge, Operation, Viewport, DiagramVersion,
-  Comment, CursorPayload, User, NodeStyle, EdgeStyle
+  Comment, CursorPayload, User, NodeStyle, EdgeStyle, SelectionPayload
 } from '@shared/types.js';
 import { diagramApi } from '../lib/api.js';
 
@@ -25,6 +25,7 @@ const DBG = DBG_ENABLED ? {
 interface OnlinePeer {
   user: User;
   cursor?: CursorPayload;
+  selection?: SelectionPayload;
   lastSeen: number;
 }
 

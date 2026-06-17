@@ -69,16 +69,15 @@ export const setupCollaborationServer = (server: HTTPServer) => {
               ...msg,
               payload: augmentedPayload as any,
             };
-            // #region debug-point dp-04
-            DBG.log('dp-04', 'broadcast:cursor', {
-              fromUserId: msg.userId,
-              diagramId: msg.diagramId,
-              hasUserInPayload: !!(broadcastMsg.payload as any).user,
-              userName: (broadcastMsg.payload as any).user?.name,
-              cursorX: (msg.payload as any).x,
-              cursorY: (msg.payload as any).y,
-            });
-            // #endregion
+            broadcast(msg.diagramId, broadcastMsg, state);
+            break;
+          }
+          case 'selection': {
+            const augmentedPayload = { ...(msg.payload as object), user: state!.user };
+            const broadcastMsg: CollabMessage = {
+              ...msg,
+              payload: augmentedPayload as any,
+            };
             broadcast(msg.diagramId, broadcastMsg, state);
             break;
           }

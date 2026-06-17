@@ -8,6 +8,7 @@ import { EditorPage } from './pages/EditorPage.jsx';
 import { TemplatesPage } from './pages/TemplatesPage.jsx';
 import { ProjectSettingsPage } from './pages/ProjectSettingsPage.jsx';
 import { EmbedPage } from './pages/EmbedPage.jsx';
+import { SharePage } from './pages/SharePage.js';
 import { Loader } from 'lucide-react';
 
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -38,6 +39,7 @@ const AppRoutes: React.FC = () => {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/embed/:diagramId" element={<EmbedPage />} />
+      <Route path="/share/:diagramId" element={<SharePage />} />
       <Route path="/" element={<RequireAuth><Navigate to="/dashboard" replace /></RequireAuth>} />
       <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
       <Route path="/projects/:projectId" element={<RequireAuth><ProjectPage /></RequireAuth>} />

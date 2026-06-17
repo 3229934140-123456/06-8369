@@ -199,6 +199,7 @@ export const DIAGRAMS: Diagram[] = [
     viewport: { ...DV, zoom: 0.85 },
     nodes: FLOWCHART_NODES,
     edges: FLOWCHART_EDGES,
+    share: { scope: 'public_readonly', allowedMemberIds: [], updatedAt: hoursAgo(2), updatedBy: 'u-1' },
   },
   {
     id: 'd-2',
@@ -211,6 +212,7 @@ export const DIAGRAMS: Diagram[] = [
     viewport: { ...DV, zoom: 0.75 },
     nodes: SWIMLANE_NODES,
     edges: SWIMLANE_EDGES,
+    share: { scope: 'team', allowedMemberIds: [], updatedAt: hoursAgo(6), updatedBy: 'u-2' },
   },
   {
     id: 'd-3',
@@ -223,6 +225,7 @@ export const DIAGRAMS: Diagram[] = [
     viewport: { ...DV, zoom: 0.88 },
     nodes: ER_NODES,
     edges: ER_EDGES,
+    share: { scope: 'private', allowedMemberIds: [], updatedAt: daysAgo(2), updatedBy: 'u-1' },
   },
   {
     id: 'd-4',
@@ -235,6 +238,7 @@ export const DIAGRAMS: Diagram[] = [
     viewport: { ...DV, zoom: 0.9 },
     nodes: SEQ_NODES,
     edges: SEQ_EDGES,
+    share: { scope: 'team', allowedMemberIds: [], updatedAt: daysAgo(3), updatedBy: 'u-3' },
   },
   {
     id: 'd-5',
@@ -247,6 +251,7 @@ export const DIAGRAMS: Diagram[] = [
     viewport: { ...DV, zoom: 0.8 },
     nodes: TOPO_NODES,
     edges: TOPO_EDGES,
+    share: { scope: 'specified', allowedMemberIds: ['u-1', 'u-2'], updatedAt: hoursAgo(5), updatedBy: 'u-2' },
   },
   {
     id: 'd-6',
@@ -272,6 +277,7 @@ export const DIAGRAMS: Diagram[] = [
       edge('e-g4', 'n-g3', 'n-g5'),
       edge('e-g5', 'n-g3', 'n-g6'),
     ],
+    share: { scope: 'private', allowedMemberIds: [], updatedAt: daysAgo(7), updatedBy: 'u-1' },
   },
 ];
 

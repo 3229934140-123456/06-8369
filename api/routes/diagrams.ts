@@ -105,6 +105,22 @@ diagramRouter.get('/:id/embed', (req: Request, res: Response) => {
 
 diagramRouter.get('/embed/public/:id', (req: Request, res: Response) => {
   const d = DiagramService.getPublicById(req.params.id);
-  if (!d) return json(res, 404, { error: '不存在' });
+  if (!d) return json(res, 404, { error: '不存在或未公开' });
   json(res, 200, d);
+});
+
+diagramRouter.get('/:id/share', (req: Request, res: Response) => {
+  const u = authMiddleware(req, res); if (!u) return;
+  const r = (DiagramService as any).getShareConfig(req.params.id, u.id);
+  if (!r) return json(res, 404, { error: '不存在' });
+  if ('error' in r) return json(res, 403, { error: '无权限管理分享' });
+  json(res, 200, r);
+});
+
+diagramRouter.put('/:id/share', (req: Request, res: Response) => {
+  const u = authMiddleware(req, res); if (!u) return;
+  const r = (DiagramService as any).updateShareConfig(req.params.id, u.id, req.body ?? {});
+  if (!r) return json(res, 404, { error: '不存在' });
+  if ('error' in r) return json(res, 403, { error: '无权限管理分享' });
+  json(res, 200, r);
 });

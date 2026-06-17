@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useDiagramStore } from '../store/useDiagramStore.js';
 import { useUserStore } from '../store/useUserStore.js';
-import type { CollabMessage, Operation, CursorPayload, PresencePayload, User } from '@shared/types.js';
+import type { CollabMessage, Operation, CursorPayload, PresencePayload, User, SelectionPayload } from '@shared/types.js';
 
 // #region debug-point dp-logger
 const DBG_ENABLED = (typeof window !== 'undefined') && window.localStorage.getItem('DEBUG_COLLAB') === '1';
@@ -115,23 +115,36 @@ export const useCollaboration = (diagramId: string) => {
     sendOps(operations);
   }, [sendOps]);
 
+  const sendSelection = useCallback((sel: SelectionPayload) => {
+    if (!user || !diagramId || !joinedRef.current) return;
+    rawSend({
+      type: 'selection', userId: user.id, diagramId,
+      payload: { ...sel, user } as SelectionPayload & { user: User },
+      timestamp: Date.now(),
+    });
+  }, [user?.id, diagramId]);
+
   const handleMessage = (msg: CollabMessage) => {
     switch (msg.type) {
       case 'cursor': {
         const userInPayload = (msg.payload as any).user as User | undefined;
         if (!userInPayload) break;
         const resolvedUser: User = { ...userInPayload, id: msg.userId };
-        // #region debug-point dp-03
-        DBG.log('dp-03', 'handle:cursor:resolved', {
-          fromMsgUserId: msg.userId,
-          userName: resolvedUser.name,
-          color: resolvedUser.color,
-          cursor: msg.payload as CursorPayload,
-        });
-        // #endregion
         setPeer({
           user: resolvedUser,
           cursor: msg.payload as CursorPayload,
+          lastSeen: msg.timestamp,
+        });
+        break;
+      }
+      case 'selection': {
+        const userInPayload = (msg.payload as any).user as User | undefined;
+        if (!userInPayload) break;
+        const resolvedUser: User = { ...userInPayload, id: msg.userId };
+        const { user: _u, ...selOnly } = msg.payload as SelectionPayload & { user?: User };
+        setPeer({
+          user: resolvedUser,
+          selection: selOnly as SelectionPayload,
           lastSeen: msg.timestamp,
         });
         break;
@@ -220,5 +233,5 @@ export const useCollaboration = (diagramId: string) => {
     };
   }, [sendOps]);
 
-  return { sendCursor, broadcastOps, connected: wsRef.current?.readyState === WebSocket.OPEN };
+  return { sendCursor, broadcastOps, sendSelection, connected: wsRef.current?.readyState === WebSocket.OPEN };
 };

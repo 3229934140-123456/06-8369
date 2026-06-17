@@ -70,7 +70,14 @@ export const DiagramCanvas: React.FC<Props> = ({ diagramId, readOnly = false }) 
   const updateViewport = useDiagramStore(s => s.updateViewport);
 
   const user = useUserStore(s => s.user);
-  const { sendCursor, broadcastOps } = useCollaboration(diagramId);
+  const { sendCursor, broadcastOps, sendSelection } = useCollaboration(diagramId);
+
+  const editingNodeId = useDiagramStore(s => s.editingNodeId);
+  const peers = useDiagramStore(s => s.peers);
+
+  useEffect(() => {
+    sendSelection({ selectedNodeIds: selectedIds, selectedEdgeId, editingNodeId });
+  }, [selectedIds, selectedEdgeId, editingNodeId, sendSelection]);
 
   const lastDragBroadcastRef = useRef<number>(0);
   const dragChangedRef = useRef(false);
@@ -395,6 +402,60 @@ export const DiagramCanvas: React.FC<Props> = ({ diagramId, readOnly = false }) 
               onMouseDown={(e) => handleEdgeMouseDown(e, edge)}
             />
           ))}
+
+          {Array.from(peers.values()).map(({ user, selection: sel }) => {
+            if (!sel) return null;
+            return (
+              <g key={`peer-sel-${user.id}`} pointerEvents="none">
+                {sel.selectedNodeIds.map(nid => {
+                  const n = nodes.find(x => x.id === nid);
+                  if (!n) return null;
+                  return (
+                    <rect
+                      key={nid}
+                      x={n.x - 4}
+                      y={n.y - 4}
+                      width={n.width + 8}
+                      height={n.height + 8}
+                      fill="none"
+                      stroke={user.color}
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                      rx={8}
+                      opacity={0.85}
+                    />
+                  );
+                })}
+                {sel.editingNodeId && (() => {
+                  const n = nodes.find(x => x.id === sel.editingNodeId);
+                  if (!n) return null;
+                  return (
+                    <g>
+                      <rect
+                        x={n.x - 10}
+                        y={n.y - 24}
+                        width={n.width + 20}
+                        height={18}
+                        fill={user.color}
+                        opacity={0.95}
+                        rx={4}
+                      />
+                      <text
+                        x={n.x + n.width / 2}
+                        y={n.y - 11}
+                        textAnchor="middle"
+                        fill="white"
+                        fontSize={11}
+                        fontWeight={600}
+                      >
+                        {user.name} 正在编辑
+                      </text>
+                    </g>
+                  );
+                })()}
+              </g>
+            );
+          })}
 
           {connectPath && (
             <path d={connectPath} fill="none" stroke="#3B82F6" strokeWidth={2}

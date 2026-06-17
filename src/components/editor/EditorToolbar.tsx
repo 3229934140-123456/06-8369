@@ -18,6 +18,7 @@ interface Props {
 
 export const EditorToolbar: React.FC<Props> = ({ rightTab, onRightTabChange, onGoBack, onGoHome }) => {
   const diagram = useDiagramStore(s => s.diagram);
+  const nodes = diagram?.nodes ?? [];
   const saving = useDiagramStore(s => s.saving);
   const undo = useDiagramStore(s => s.undo);
   const redo = useDiagramStore(s => s.redo);
@@ -29,6 +30,7 @@ export const EditorToolbar: React.FC<Props> = ({ rightTab, onRightTabChange, onG
   const user = useUserStore(s => s.user);
 
   const [showExport, setShowExport] = useState(false);
+  const [showPeers, setShowPeers] = useState(false);
   const [zoom, setZoom] = useState(diagram?.viewport.zoom ?? 1);
 
   React.useEffect(() => {
@@ -132,9 +134,9 @@ export const EditorToolbar: React.FC<Props> = ({ rightTab, onRightTabChange, onG
       <div className="flex-1" />
 
       <div className="flex items-center gap-0.5 pr-3 border-r border-graphite-200">
-        {(['properties', 'versions', 'comments'] as const).map(tab => {
-          const Icon = { properties: Settings, versions: History, comments: MessageSquare }[tab];
-          const label = { properties: '属性', versions: '版本', comments: '讨论' }[tab];
+        {(['properties', 'versions', 'comments', 'share'] as const).map(tab => {
+          const Icon = { properties: Settings, versions: History, comments: MessageSquare, share: Share2 }[tab];
+          const label = { properties: '属性', versions: '版本', comments: '讨论', share: '分享' }[tab];
           const count = tab === 'comments' ? useDiagramStore.getState().comments.length : 0;
           return (
             <button
@@ -158,20 +160,86 @@ export const EditorToolbar: React.FC<Props> = ({ rightTab, onRightTabChange, onG
       </div>
 
       <div className="flex items-center gap-2 pl-1">
-        <div className="flex items-center -space-x-2">
-          {[user, ...Array.from(peers.values()).map(p => p.user)].filter(Boolean).slice(0, 4).map((u, i) => (
-            <div
-              key={u!.id}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold border-2 border-white shadow-sm"
-              style={{ backgroundColor: u!.color }}
-              title={`${u!.name}${i === 0 ? '（你）' : ''}`}
-            >
-              {u!.avatar}
+        <div className="relative">
+          <button
+            onClick={() => { setShowPeers(v => !v); setShowExport(false); }}
+            className="flex items-center -space-x-2 cursor-pointer hover:opacity-80 transition"
+            title="点击查看在线成员"
+          >
+            {[user, ...Array.from(peers.values()).map(p => p.user)].filter(Boolean).slice(0, 4).map((u, i) => (
+              <div
+                key={u!.id}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold border-2 border-white shadow-sm"
+                style={{ backgroundColor: u!.color }}
+              >
+                {u!.avatar}
+              </div>
+            ))}
+            {peers.size + 1 > 4 && (
+              <div className="w-8 h-8 rounded-full bg-graphite-200 flex items-center justify-center text-graphite-600 text-xs font-semibold border-2 border-white">
+                +{peers.size + 1 - 4}
+              </div>
+            )}
+            <div className="ml-3 flex items-center gap-1.5 text-xs text-success-600 bg-success-500/10 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-success-500 animate-pulse" />
+              {peers.size + 1} 人在线
             </div>
-          ))}
-          {peers.size + 1 > 4 && (
-            <div className="w-8 h-8 rounded-full bg-graphite-200 flex items-center justify-center text-graphite-600 text-xs font-semibold border-2 border-white">
-              +{peers.size + 1 - 4}
+          </button>
+          {showPeers && (
+            <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-glass border border-graphite-200 py-2 z-50 animate-fade-in">
+              <div className="px-3 pb-2 border-b border-graphite-100 text-xs font-semibold text-graphite-500">
+                在线成员 · {peers.size + 1}
+              </div>
+              <div className="max-h-80 overflow-auto">
+                <div className="px-3 py-2 flex items-start gap-3 border-b border-graphite-50">
+                  <div
+                    className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-white text-sm font-semibold"
+                    style={{ backgroundColor: user?.color }}
+                  >
+                    {user?.avatar}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-graphite-800 truncate">{user?.name}</span>
+                      <span className="text-[10px] text-electric-600 bg-electric-500/10 px-1.5 py-0.5 rounded">你</span>
+                    </div>
+                    <div className="text-[11px] text-graphite-400 mt-0.5">{user?.email}</div>
+                  </div>
+                </div>
+                {Array.from(peers.values()).map(peer => {
+                  const sel = peer.selection;
+                  let statusText = '正在查看';
+                  if (sel?.editingNodeId) {
+                    const n = nodes.find(x => x.id === sel.editingNodeId);
+                    statusText = `正在编辑：${n?.text ? `「${n.text.slice(0, 12)}${n.text.length > 12 ? '…' : ''}」` : '节点'}`;
+                  } else if (sel?.selectedNodeIds.length) {
+                    statusText = `选中 ${sel.selectedNodeIds.length} 个节点${sel.selectedEdgeId ? ' + 1 条连线' : ''}`;
+                  } else if (sel?.selectedEdgeId) {
+                    statusText = '选中 1 条连线';
+                  }
+                  return (
+                    <div key={peer.user.id} className="px-3 py-2 flex items-start gap-3 border-b border-graphite-50 last:border-b-0">
+                      <div
+                        className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-white text-sm font-semibold"
+                        style={{ backgroundColor: peer.user.color }}
+                      >
+                        {peer.user.avatar}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-graphite-800 truncate">{peer.user.name}</div>
+                        <div className="text-[11px] text-graphite-400 mt-0.5 truncate">{peer.user.email}</div>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: peer.user.color }}
+                          />
+                          <span className="text-[11px] text-graphite-600 truncate">{statusText}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

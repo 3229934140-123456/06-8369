@@ -80,6 +80,15 @@ export interface Viewport {
   zoom: number;
 }
 
+export type ShareScope = 'private' | 'public_readonly' | 'team' | 'specified';
+
+export interface ShareConfig {
+  scope: ShareScope;
+  allowedMemberIds: string[];
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export interface Diagram {
   id: string;
   projectId: string;
@@ -92,6 +101,7 @@ export interface Diagram {
   nodes: DiagramNode[];
   edges: DiagramEdge[];
   viewport: Viewport;
+  share: ShareConfig;
 }
 
 export interface DiagramVersion {
@@ -132,6 +142,12 @@ export interface CursorPayload {
   selectedNodeId?: string;
 }
 
+export interface SelectionPayload {
+  selectedNodeIds: string[];
+  selectedEdgeId: string | null;
+  editingNodeId: string | null;
+}
+
 type NodeUpdateChanges = Omit<Partial<DiagramNode>, 'style'> & { style?: Partial<NodeStyle> };
 type EdgeUpdateChanges = Omit<Partial<DiagramEdge>, 'style'> & { style?: Partial<EdgeStyle> };
 
@@ -156,13 +172,13 @@ export interface PresencePayload {
   self?: User;
 }
 
-export type CollabMessageType = 'cursor' | 'op' | 'join' | 'leave' | 'presence';
+export type CollabMessageType = 'cursor' | 'op' | 'join' | 'leave' | 'presence' | 'selection';
 
 export interface CollabMessage {
   type: CollabMessageType;
   userId: string;
   diagramId: string;
-  payload: CursorPayload | OperationPayload | PresencePayload;
+  payload: CursorPayload | OperationPayload | PresencePayload | SelectionPayload;
   timestamp: number;
 }
 

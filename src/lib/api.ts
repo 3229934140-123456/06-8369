@@ -1,6 +1,6 @@
 import type {
   User, Project, Diagram, DiagramVersion, Comment, CommentReply,
-  DiagramTemplate, Operation, DiagramType, MemberRole
+  DiagramTemplate, Operation, DiagramType, MemberRole, ShareConfig
 } from '@shared/types.js';
 
 const API_BASE = '/api';
@@ -110,6 +110,10 @@ export const diagramApi = {
     return get<{ embedCode: string; sync: boolean }>(`/diagrams/${id}/embed`);
   },
   getPublicEmbed(id: string) { return get<Diagram>(`/diagrams/embed/public/${id}`); },
+  getShareConfig(id: string) { return get<ShareConfig>(`/diagrams/${id}/share`); },
+  updateShareConfig(id: string, cfg: Partial<ShareConfig>) {
+    return put<ShareConfig>(`/diagrams/${id}/share`, cfg);
+  },
 };
 
 export const templateApi = {
