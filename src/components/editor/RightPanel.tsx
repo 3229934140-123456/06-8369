@@ -243,6 +243,7 @@ const VersionsPanel: React.FC = () => {
   const versions = useDiagramStore(s => s.versions);
   const restore = useDiagramStore(s => s.restoreVersion);
   const createVersion = useDiagramStore(s => s.createVersion);
+  const loadVersions = useDiagramStore(s => s.loadVersions);
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
   const currentUser = useUserStore(s => s.user);
@@ -250,6 +251,12 @@ const VersionsPanel: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
 
   React.useEffect(() => { allUsers.then(setUsers); }, [allUsers]);
+
+  React.useEffect(() => {
+    loadVersions();
+    const id = window.setInterval(() => loadVersions(), 15_000);
+    return () => window.clearInterval(id);
+  }, [loadVersions]);
 
   const getAuthor = (id: string) => users.find(u => u.id === id)?.name ?? '协作者';
   const getColor = (id: string) => users.find(u => u.id === id)?.color ?? '#3B82F6';

@@ -7,7 +7,8 @@ import { AuthService } from './AuthService.js';
 import { db } from '../repositories/index.js';
 
 // #region debug-point dp-logger
-const DBG = {
+const DBG_ENABLED = (process.env.DEBUG_COLLAB ?? '0') === '1';
+const DBG = DBG_ENABLED ? {
   url: 'http://127.0.0.1:7777/event',
   sid: 'collab-sync-bugs',
   log: (point: string, event: string, data: any = {}) => {
@@ -21,7 +22,7 @@ const DBG = {
       req.end();
     } catch (e) {}
   },
-};
+} : { log: () => {} };
 // #endregion
 
 interface ClientState {

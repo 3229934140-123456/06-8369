@@ -5,7 +5,8 @@ import { DEFAULT_VIEWPORT as DV } from '../../shared/types.js';
 import http from 'node:http';
 
 // #region debug-point dp-logger
-const DBG = {
+const DBG_ENABLED = (process.env.DEBUG_COLLAB ?? '0') === '1';
+const DBG = DBG_ENABLED ? {
   url: 'http://127.0.0.1:7777/event',
   sid: 'collab-sync-bugs',
   log: (point: string, event: string, data: any = {}) => {
@@ -19,7 +20,7 @@ const DBG = {
       req.end();
     } catch (e) {}
   },
-};
+} : { log: () => {} };
 // #endregion
 
 const applyOps = (nodes: DiagramNode[], edges: DiagramEdge[], ops: Operation[]): { nodes: DiagramNode[]; edges: DiagramEdge[] } => {
@@ -64,6 +65,12 @@ export const DiagramService = {
     const d = db.diagrams.findById(id);
     if (!d) return undefined;
     if (!AuthService.canView(userId, d.projectId)) return undefined;
+    return d;
+  },
+
+  getPublicById(id: string): Diagram | undefined {
+    const d = db.diagrams.findById(id);
+    if (!d) return undefined;
     return d;
   },
 

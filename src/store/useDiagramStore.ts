@@ -6,7 +6,8 @@ import type {
 import { diagramApi } from '../lib/api.js';
 
 // #region debug-point dp-logger
-const DBG = (typeof window !== 'undefined') ? {
+const DBG_ENABLED = (typeof window !== 'undefined') && window.localStorage.getItem('DEBUG_COLLAB') === '1';
+const DBG = DBG_ENABLED ? {
   url: 'http://127.0.0.1:7777/event',
   sid: 'collab-sync-bugs',
   log: (point: string, event: string, data: any = {}) => {
@@ -27,9 +28,15 @@ interface OnlinePeer {
   lastSeen: number;
 }
 
+interface Snapshot {
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+  viewport: Viewport;
+}
+
 interface HistoryState {
-  past: Operation[][];
-  future: Operation[][];
+  past: Snapshot[];
+  future: Snapshot[];
 }
 
 interface DiagramState {
@@ -80,7 +87,11 @@ interface DiagramState {
   reset: () => void;
 }
 
-const cloneOps = (ops: Operation[]): Operation[] => ops.map(o => ({ ...o }) as Operation);
+const cloneSnapshot = (s: Snapshot): Snapshot => ({
+  nodes: s.nodes.map(n => ({ ...n, style: { ...n.style } })),
+  edges: s.edges.map(e => ({ ...e, style: { ...e.style }, points: e.points ? [...e.points] : undefined })),
+  viewport: { ...s.viewport },
+});
 
 export const useDiagramStore = create<DiagramState>((set, get) => ({
   diagram: null,
@@ -176,12 +187,17 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       }
     }
 
-    const nextDiagram = { ...state.diagram, nodes, edges, viewport };
+    const nextDiagram = { ...state.diagram!, nodes, edges, viewport };
 
     let nextHistory = state.history;
     if (!remote && ops.some(o => o.type !== 'viewport:update')) {
+      const prevSnapshot: Snapshot = {
+        nodes: state.diagram!.nodes.map(n => ({ ...n, style: { ...n.style } })),
+        edges: state.diagram!.edges.map(e => ({ ...e, style: { ...e.style }, points: e.points ? [...e.points] : undefined })),
+        viewport: { ...state.diagram!.viewport },
+      };
       nextHistory = {
-        past: [...state.history.past, cloneOps(ops)],
+        past: [...state.history.past, prevSnapshot],
         future: [],
       };
       if (nextHistory.past.length > 100) nextHistory.past.shift();
@@ -189,6 +205,8 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       DBG.log('dp-02', 'history-push', {
         pastLen: nextHistory.past.length,
         opTypes, remote,
+        snapshotNodes: prevSnapshot.nodes.length,
+        snapshotEdges: prevSnapshot.edges.length,
       });
       // #endregion
     } else if (remote) {
@@ -207,44 +225,57 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   undo: () => {
     const state = get();
     if (state.history.past.length === 0 || !state.diagram) return;
-    const ops = [...state.history.past].pop()!;
-    const inverse = ops.map<Operation>(op => {
-      switch (op.type) {
-        case 'node:add': return { type: 'node:delete', nodeId: op.node.id };
-        case 'node:delete': return { type: 'node:add', node: state.diagram!.nodes.find(n => n.id === op.nodeId)! };
-        case 'node:update': {
-          const cur = state.diagram!.nodes.find(n => n.id === op.nodeId)!;
-          return { type: 'node:update', nodeId: op.nodeId, changes: diffFrom(cur, op.changes as any) as any };
-        }
-        case 'edge:add': return { type: 'edge:delete', edgeId: op.edge.id };
-        case 'edge:delete': return { type: 'edge:add', edge: state.diagram!.edges.find(e => e.id === op.edgeId)! };
-        case 'edge:update': {
-          const cur = state.diagram!.edges.find(e => e.id === op.edgeId)!;
-          return { type: 'edge:update', edgeId: op.edgeId, changes: diffFrom(cur, op.changes as any) as any };
-        }
-        default: return op;
-      }
+    const prevSnap = [...state.history.past].pop()!;
+    const currentSnap: Snapshot = {
+      nodes: state.diagram.nodes.map(n => ({ ...n, style: { ...n.style } })),
+      edges: state.diagram.edges.map(e => ({ ...e, style: { ...e.style }, points: e.points ? [...e.points] : undefined })),
+      viewport: { ...state.diagram.viewport },
+    };
+    const restoredDiagram = { ...state.diagram, ...prevSnap };
+    // #region debug-point dp-02
+    DBG.log('dp-02', 'undo:executed', {
+      pastRemaining: state.history.past.length - 1,
+      futureNext: state.history.future.length + 1,
+      restoredNodes: restoredDiagram.nodes.length,
+      restoredEdges: restoredDiagram.edges.length,
     });
-    get().applyOps(inverse);
+    // #endregion
     set({
+      diagram: restoredDiagram,
       history: {
         past: state.history.past.slice(0, -1),
-        future: [cloneOps(ops), ...state.history.future],
+        future: [currentSnap, ...state.history.future],
       },
     });
+    get().save();
   },
 
   redo: () => {
     const state = get();
-    if (state.history.future.length === 0) return;
-    const ops = state.history.future[0];
-    get().applyOps(ops);
+    if (state.history.future.length === 0 || !state.diagram) return;
+    const nextSnap = state.history.future[0];
+    const currentSnap: Snapshot = {
+      nodes: state.diagram.nodes.map(n => ({ ...n, style: { ...n.style } })),
+      edges: state.diagram.edges.map(e => ({ ...e, style: { ...e.style }, points: e.points ? [...e.points] : undefined })),
+      viewport: { ...state.diagram.viewport },
+    };
+    const restoredDiagram = { ...state.diagram, ...nextSnap };
+    // #region debug-point dp-02
+    DBG.log('dp-02', 'redo:executed', {
+      pastNext: state.history.past.length + 1,
+      futureRemaining: state.history.future.length - 1,
+      restoredNodes: restoredDiagram.nodes.length,
+      restoredEdges: restoredDiagram.edges.length,
+    });
+    // #endregion
     set({
+      diagram: restoredDiagram,
       history: {
-        past: [...state.history.past, cloneOps(ops)],
+        past: [...state.history.past, currentSnap],
         future: state.history.future.slice(1),
       },
     });
+    get().save();
   },
 
   selectNode: (id, multi) => {

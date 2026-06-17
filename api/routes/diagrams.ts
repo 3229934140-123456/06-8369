@@ -104,7 +104,7 @@ diagramRouter.get('/:id/embed', (req: Request, res: Response) => {
 });
 
 diagramRouter.get('/embed/public/:id', (req: Request, res: Response) => {
-  const d = DiagramService.getById(req.params.id, 'u-1');
+  const d = DiagramService.getPublicById(req.params.id);
   if (!d) return json(res, 404, { error: '不存在' });
   json(res, 200, d);
 });

@@ -7,7 +7,8 @@ import { DIAGRAM_TYPE_LABELS } from '@shared/types.js';
 import { Loader, Workflow, RefreshCw } from 'lucide-react';
 
 // #region debug-point dp-logger
-const DBG = (typeof window !== 'undefined') ? {
+const DBG_ENABLED = (typeof window !== 'undefined') && window.localStorage.getItem('DEBUG_COLLAB') === '1';
+const DBG = DBG_ENABLED ? {
   url: 'http://127.0.0.1:7777/event',
   sid: 'collab-sync-bugs',
   log: (point: string, event: string, data: any = {}) => {
@@ -47,7 +48,7 @@ export const EmbedPage: React.FC = () => {
     if (!silent) { setLoading(true); }
     setError('');
     try {
-      const d = await diagramApi.get(diagramId);
+      const d = await diagramApi.getPublicEmbed(diagramId);
       const hash = computeHash(d);
       if (lastHashRef.current !== hash) {
         lastHashRef.current = hash;
@@ -67,7 +68,7 @@ export const EmbedPage: React.FC = () => {
   useEffect(() => {
     lastHashRef.current = '';
     load(false);
-    const id = window.setInterval(() => load(true), 3000);
+    const id = window.setInterval(() => load(true), 2000);
     pollTimerRef.current = id;
     return () => {
       if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
@@ -166,7 +167,7 @@ export const EmbedPage: React.FC = () => {
                 const d = Math.hypot(dx, dy);
                 const cs = Math.min(d * 0.4, 120);
                 const off = (p: string, s: number): [number, number] =>
-                  ({ right: [s, 0], left: [-s, 0], top: [0, -s], bottom: [0, s] } as any)[p](s);
+                  ({ right: [s, 0], left: [-s, 0], top: [0, -s], bottom: [0, s] } as any)[p];
                 const c1 = off(sp, cs), c2 = off(tp, cs);
                 const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
                 return (

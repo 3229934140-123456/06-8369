@@ -4,7 +4,8 @@ import type { Viewport, CursorPayload } from '@shared/types.js';
 import { viewportToScreen } from '../../lib/geometry.js';
 
 // #region debug-point dp-logger
-const DBG = (typeof window !== 'undefined') ? {
+const DBG_ENABLED = (typeof window !== 'undefined') && window.localStorage.getItem('DEBUG_COLLAB') === '1';
+const DBG = DBG_ENABLED ? {
   url: 'http://127.0.0.1:7777/event',
   sid: 'collab-sync-bugs',
   log: (point: string, event: string, data: any = {}) => {
